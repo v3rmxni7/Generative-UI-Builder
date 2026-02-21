@@ -1,101 +1,50 @@
 "use client";
 
-import { useState } from "react";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+
+import { useGenerationStream } from "@/hooks/useGenerationStream";
+import ControlPanel from "@/components/ControlPanel";
+import OutputPanel from "@/components/OutputPanel";
 
 export default function HomePage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [instructions, setInstructions] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [layout, setLayout] = useState<any>(null);
-  const [code, setCode] = useState("");
-
-  // Backend URL
-  const API_URL = "http://localhost:8000/generate";
-
-  const handleGenerate = async () => {
-    if (!file) {
-      alert("Upload an image first");
-      return;
-    }
-
-    setLoading(true);
-
-    const form = new FormData();
-    form.append("file", file);
-    form.append("instructions", instructions);
-
-    try {
-      const res = await fetch(API_URL, {
-        method: "POST",
-        body: form,
-      });
-
-      const data = await res.json();
-      setLayout(data.layout);
-      setCode(data.code);
-    } catch (error) {
-      console.error(error);
-      alert("Failed to reach backend");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    dsl,
+    code,
+    status,
+    agents,
+    plan,
+    reflection,
+    generate,
+    cancel,
+  } = useGenerationStream();
 
   return (
-    <main className="p-8 flex flex-col gap-6 max-w-3xl mx-auto">
-      <h1 className="text-3xl font-bold">
-        Generative UI Builder (Phase 1)
-      </h1>
+    <div className="h-screen flex flex-col overflow-hidden">
+      <PanelGroup direction="horizontal" className="flex-1">
+        {/* Left: controls + agent timeline */}
+        <Panel defaultSize={28} minSize={22} maxSize={40}>
+          <ControlPanel
+            status={status}
+            agents={agents}
+            plan={plan}
+            reflection={reflection}
+            onGenerate={generate}
+            onCancel={cancel}
+          />
+        </Panel>
 
-      {/* Image Upload */}
-      <div className="flex flex-col gap-2">
-        <label className="font-medium">UI Screenshot or Sketch</label>
-        <input
-          type="file"
-          accept="image/*"
-          className="border p-2 rounded-md"
-          onChange={(e) => setFile(e.target.files![0])}
-        />
-      </div>
+        <PanelResizeHandle className="w-1 bg-zinc-800 hover:bg-blue-600 transition-colors cursor-col-resize" />
 
-      {/* Instructions */}
-      <div className="flex flex-col gap-2">
-        <label className="font-medium">Instructions (Optional)</label>
-        <textarea
-          className="border p-3 rounded-md text-sm"
-          placeholder="Example: Dashboard layout with sidebar"
-          value={instructions}
-          onChange={(e) => setInstructions(e.target.value)}
-        />
-      </div>
-
-      {/* Button */}
-      <button
-        onClick={handleGenerate}
-        className="bg-blue-600 text-white px-4 py-2 rounded-md w-fit"
-      >
-        {loading ? "Generating…" : "Generate UI"}
-      </button>
-
-      {/* Show DSL JSON */}
-      {layout && (
-        <section>
-          <h2 className="text-xl font-semibold mb-2">Generated DSL</h2>
-          <pre className="bg-gray-100 p-3 rounded-md text-sm max-h-[350px] overflow-auto">
-            {JSON.stringify(layout, null, 2)}
-          </pre>
-        </section>
-      )}
-
-      {/* Show Code */}
-      {code && (
-        <section>
-          <h2 className="text-xl font-semibold mb-2">Generated React Code</h2>
-          <pre className="bg-gray-100 p-3 rounded-md text-sm whitespace-pre-wrap max-h-[450px] overflow-auto">
-            {code}
-          </pre>
-        </section>
-      )}
-    </main>
+        {/* Right: tabbed output */}
+        <Panel minSize={40}>
+          <OutputPanel
+            dsl={dsl}
+            code={code}
+            status={status}
+            reflection={reflection}
+          />
+        </Panel>
+      </PanelGroup>
+    </div>
   );
 }

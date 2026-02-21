@@ -1,48 +1,63 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from __future__ import annotations
+
+import base64
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-import json
+from fastapi.responses import StreamingResponse
 
-from schemas.layout_schema import Layout
-from utils.image_loader import load_image_base64
-from models.vision_to_dsl import image_to_dsl
-from models.dsl_to_code import generate_react_code_from_dsl
+from orchestrator import run_pipeline
 
-app = FastAPI()
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+MAX_IMAGE_MB = int(os.getenv("MAX_IMAGE_SIZE_MB", "10"))
 
-# Allow frontend to talk to backend
+app = FastAPI(title="Generative UI Builder — Agentic API", version="2.0.0")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # can restrict later
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
 
-@app.get("/")
-def health():
-    return {"message": "Generative UI Builder Backend Alive"}
+@app.get("/health")
+async def health():
+    has_key = bool(os.getenv("GEMINI_API_KEY"))
+    return {"status": "ok", "gemini_configured": has_key}
 
 
-@app.post("/generate")
-async def generate_ui(
+@app.post("/generate/stream")
+async def generate_ui_stream(
     file: UploadFile = File(...),
-    instructions: str = Form("")
+    instructions: str = Form(""),
 ):
-    # 1. image → base64 (async)
-    img_b64 = await load_image_base64(file)
+    """
+    5-agent agentic pipeline streamed via SSE:
+      Planner → Vision → Validator → CodeGenerator → Reflection
+    """
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=415, detail="File must be an image.")
 
-    # 2. vision model → DSL dict
-    layout_dict = image_to_dsl(img_b64, instructions)
+    raw_bytes = await file.read()
+    if len(raw_bytes) > MAX_IMAGE_MB * 1024 * 1024:
+        raise HTTPException(
+            status_code=413, detail=f"Image exceeds {MAX_IMAGE_MB} MB limit."
+        )
 
-    # 3. Validate against Pydantic schema
-    layout = Layout(**layout_dict)
+    img_b64 = base64.b64encode(raw_bytes).decode("utf-8")
 
-    # 4. DSL JSON → React code
-    layout_json_str = json.dumps(layout_dict, indent=2)
-    code = generate_react_code_from_dsl(layout_json_str)
-
-    return {
-        "layout": layout_dict,
-        "code": code
-    }
+    return StreamingResponse(
+        run_pipeline(img_b64, instructions),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

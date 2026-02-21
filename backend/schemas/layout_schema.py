@@ -1,14 +1,20 @@
-from typing import List, Optional, Dict
+from __future__ import annotations
+
+from typing import Dict, List, Literal, Optional
+
 from pydantic import BaseModel
+
 
 class Element(BaseModel):
     type: str
-    props: Optional[Dict] = None
-    children: Optional[List['Element']] = None
+    props: Optional[Dict[str, str]] = None
+    children: Optional[List[Element]] = None
 
-Element.update_forward_refs()
+
+Element.model_rebuild()
+
 
 class Layout(BaseModel):
     type: str = "Page"
-    layout: str  # "vertical" or "horizontal"
+    layout: Literal["vertical", "horizontal"]
     children: List[Element]
