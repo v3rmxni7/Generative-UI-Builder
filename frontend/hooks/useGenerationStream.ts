@@ -10,6 +10,7 @@ import type {
   ReflectionResult,
 } from "@/types/generation";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const AGENT_ORDER = ["Planner", "Vision", "Validator", "CodeGenerator", "Reflection"];
 
 function initialAgents(): AgentStep[] {
@@ -70,7 +71,7 @@ export function useGenerationStream() {
 
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/generate/stream`,
+          `${API_URL}/generate/stream`,
           { method: "POST", body: form, signal: controller.signal },
         );
 

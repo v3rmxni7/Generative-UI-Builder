@@ -38,7 +38,8 @@ export default function LivePreview({ code }: Props) {
           ],
         });
 
-        const transpiled = result.code ?? "";
+        const transpiled = (result.code ?? "")
+          .replace(/<\/script/gi, "<\\/script");
         setTranspileError(null);
 
         if (iframeRef.current) {
@@ -116,10 +117,18 @@ function buildIframeHTML(transpiledJS: string): string {
   <script type="module">
     import React from 'react';
     import { createRoot } from 'react-dom/client';
-    const exports = {};
-    ${transpiledJS}
-    const Component = exports.default || GeneratedPage;
-    createRoot(document.getElementById('root')).render(React.createElement(Component));
+    try {
+      const exports = {};
+      ${transpiledJS}
+      const Component = exports.default || (typeof GeneratedPage !== 'undefined' ? GeneratedPage : null);
+      if (Component) {
+        createRoot(document.getElementById('root')).render(React.createElement(Component));
+      } else {
+        document.getElementById('root').innerHTML = '<p style="padding:1rem;color:#666">No component exported.</p>';
+      }
+    } catch (err) {
+      document.getElementById('root').innerHTML = '<pre style="padding:1rem;color:red;font-size:13px">' + err.message + '</pre>';
+    }
   </script>
 </body>
 </html>`;

@@ -36,5 +36,8 @@ export interface PlanResult {
   component_count: number;
   detected_components: string[];
   layout_strategy: string;
+  has_navigation: boolean;
+  has_forms: boolean;
+  has_data_display: boolean;
   notes: string;
 }

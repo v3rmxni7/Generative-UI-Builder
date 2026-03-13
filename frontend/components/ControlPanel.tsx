@@ -48,9 +48,11 @@ export default function ControlPanel({
       toast.error(`Image must be under ${MAX_FILE_SIZE_MB} MB.`);
       return;
     }
+    // Revoke previous object URL to prevent memory leak
+    if (thumbnail) URL.revokeObjectURL(thumbnail);
     setFile(f);
     setThumbnail(URL.createObjectURL(f));
-  }, []);
+  }, [thumbnail]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
