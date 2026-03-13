@@ -48,10 +48,42 @@ async def run_validator(dsl: dict[str, Any]) -> tuple[dict[str, Any], list[str]]
         return dsl, issues
     except ValidationError as e:
         issues.append(f"Initial validation failed: {e.error_count()} errors")
+        last_error = e  # capture before Python deletes it at end of except block
 
-    # Repair loop
+    # Repair loop — use the initial validation error to drive the first repair
     current = dsl
+
     for attempt in range(1, MAX_REPAIR_ATTEMPTS + 1):
+        error_summary = "; ".join(
+            f"{err['loc']}: {err['msg']}" for err in last_error.errors()[:5]
+        )
+        issues.append(f"Attempt {attempt}: {error_summary}")
+
+        with timed("Validator") as ctx:
+            prompt = REPAIR_PROMPT.format(
+                errors=error_summary,
+                dsl_json=json.dumps(current, indent=2),
+            )
+            raw, tokens = await run_gemini(prompt, temperature=0.1)
+            ctx["tokens"] = tokens
+
+        log_agent(
+            "Validator",
+            status="repairing",
+            duration_ms=ctx.get("duration_ms"),
+            tokens=ctx.get("tokens"),
+            extra={"attempt": attempt},
+        )
+
+        try:
+            start = raw.index("{")
+            end = raw.rindex("}") + 1
+            current = json.loads(raw[start:end])
+        except (ValueError, json.JSONDecodeError):
+            issues.append(f"Repair attempt {attempt} produced unparseable output")
+            continue
+
+        # Validate the repaired result
         try:
             Layout(**current)
             log_agent(
@@ -60,35 +92,9 @@ async def run_validator(dsl: dict[str, Any]) -> tuple[dict[str, Any], list[str]]
                 extra={"valid": True, "attempts": attempt},
             )
             return current, issues
-        except ValidationError as e:
-            error_summary = "; ".join(
-                f"{err['loc']}: {err['msg']}" for err in e.errors()[:5]
-            )
-            issues.append(f"Attempt {attempt}: {error_summary}")
-
-            with timed("Validator") as ctx:
-                prompt = REPAIR_PROMPT.format(
-                    errors=error_summary,
-                    dsl_json=json.dumps(current, indent=2),
-                )
-                raw, tokens = await run_gemini(prompt, temperature=0.1)
-                ctx["tokens"] = tokens
-
-            log_agent(
-                "Validator",
-                status="repairing",
-                duration_ms=ctx.get("duration_ms"),
-                tokens=ctx.get("tokens"),
-                extra={"attempt": attempt},
-            )
-
-            try:
-                start = raw.index("{")
-                end = raw.rindex("}") + 1
-                current = json.loads(raw[start:end])
-            except (ValueError, json.JSONDecodeError):
-                issues.append(f"Repair attempt {attempt} produced unparseable output")
-                continue
+        except ValidationError as ve:
+            last_error = ve
+            continue
 
     # Final attempt after all repairs
     try:
